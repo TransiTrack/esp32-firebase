@@ -130,7 +130,7 @@ void loop()
 
     // Firebase.ready() should be called repeatedly to handle authentication tasks.
 
-    if (Firebase.ready() && (millis() - dataMillis > 4000 || dataMillis == 0))
+    if (Firebase.ready() && (millis() - dataMillis > 5000 || dataMillis == 0))
     {
         if (count > 23){
           count = 0;
