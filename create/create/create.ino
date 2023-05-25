@@ -28,6 +28,7 @@
 #define WIFI_SSID "Wil"
 #define WIFI_PASSWORD "1223334444"
 
+
 /* 2. Define the API Key */
 #define API_KEY "AIzaSyDVi1awMUCpMK6P-AejbbG0Ga2jBtD13Vo"
 
@@ -46,6 +47,7 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
+unsigned long timestamp = 1671936000;
 unsigned long dataMillis = 0;
 int count = 0;
 
@@ -110,80 +112,25 @@ void setup()
 {
 
     Serial.begin(115200);
-
-
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-    multi.addAP(WIFI_SSID, WIFI_PASSWORD);
-    multi.run();
-#else
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-#endif
-
-    Serial.print("Connecting to Wi-Fi");
-    unsigned long ms = millis();
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.print(".");
-        delay(300);
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-        if (millis() - ms > 10000)
-            break;
-#endif
-    }
-    configTime(0, 0, "pool.ntp.org");  // Use an NTP server to synchronize time
-    while (!time(nullptr)) {
-      delay(500);
-    }
-    Serial.println();
-    Serial.print("Connected with IP: ");
-    Serial.println(WiFi.localIP());
-    Serial.println();
+    // 2. Initialize WiFi and Time
+    connectToWiFi();
+    configTimeFromNTP();
 
     Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
 
     /* Assign the api key (required) */
     config.api_key = API_KEY;
 
-    /* Assign the user sign in credentials */
+    // 5. Initialize firebase connection
+    config.api_key = API_KEY;
     auth.user.email = USER_EMAIL;
     auth.user.password = USER_PASSWORD;
-
-    // The WiFi credentials are required for Pico W
-    // due to it does not have reconnect feature.
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-    config.wifi.clearAP();
-    config.wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
-#endif
-
-    /* Assign the callback function for the long running token generation task */
+    // Assign the callback function for the long running token generation task 
     config.token_status_callback = tokenStatusCallback; // see addons/TokenHelper.h
 
-#if defined(ESP8266)
-    // In ESP8266 required for BearSSL rx/tx buffer for large data handle, increase Rx size as needed.
-    fbdo.setBSSLBufferSize(2048 /* Rx buffer size in bytes from 512 - 16384 */, 2048 /* Tx buffer size in bytes from 512 - 16384 */);
-#endif
-
-    // Limit the size of response payload to be collected in FirebaseData
     fbdo.setResponseSize(2048);
-
-    Firebase.begin(&config, &auth);
-
+    Firebase.begin(&config, &auth); // DONT FORGET TO IMPLMENT for case when FAIL
     Firebase.reconnectWiFi(true);
-
-    // For sending payload callback
-    // config.cfs.upload_callback = fcsUploadCallback;
-}
-
-String convertToFirebaseTimestamp(unsigned long int unixTime) {
-  // Convert UNIX timestamp to ISO 8601 format
-  time_t t = unixTime;
-  struct tm timeinfo;
-  gmtime_r(&t, &timeinfo);
-  char timestampStr[22];  // Increased the size to accommodate the 'Z' character
-  snprintf(timestampStr, sizeof(timestampStr), "%04d-%02d-%02dT%02d:%02d:%02dZ",
-           timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-  return String(timestampStr);
 }
 
 void loop()
@@ -193,7 +140,7 @@ void loop()
 
     if (Firebase.ready() && (millis() - dataMillis > 5000 || dataMillis == 0))
     {
-      // unsigned long timestamp = millis();
+      updateTimestamp();
 
       if (count > 23){
         count = 0;
@@ -249,7 +196,7 @@ void loop()
       content.set("fields/route_id/integerValue", 0);
 
       // Get the current timestamp
-      unsigned long timestamp = now();  // Get the current time
+      //unsigned long timestamp = now();  // Get the current time
       // Convert timestamp to a string
       String timestampStr = convertToFirebaseTimestamp(timestamp);
 
@@ -265,4 +212,67 @@ void loop()
 
       count++;
     }
+}
+
+// ----------------------- HELPER FXNS for WiFi -----------------------
+void connectToWiFi() {
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Waiting for connection...");
+  }
+
+  Serial.println("Connected to WiFi!");
+}
+
+// ----------------------- HELPER FXNS for Timestamp -----------------------
+void configTimeFromNTP() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Waiting for NTP time sync...");
+
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S"); // Show the current time
+}
+
+void updateTimestamp() {
+  if(WiFi.status() == WL_CONNECTED) {
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    // Use the seconds since the Unix epoch as your timestamp
+    timestamp = now;
+  } else {
+    // If not connected to WiFi, use the ESP32's internal millis() function
+    // This won't be accurate over long periods, but will be reasonably accurate in short term
+    timestamp += millis() / 1000;
+  }
+}
+
+String convertToFirebaseTimestamp(unsigned long int unixTime) {
+  // Convert UNIX timestamp to ISO 8601 format
+  time_t t = unixTime;
+  struct tm timeinfo;
+  gmtime_r(&t, &timeinfo);
+  char timestampStr[22];  // Increased the size to accommodate the 'Z' character
+  snprintf(timestampStr, sizeof(timestampStr), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+           timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  return String(timestampStr);
 }
