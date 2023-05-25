@@ -39,7 +39,7 @@
 #define USER_EMAIL "zedec.pacaldo@gmail.com"
 #define USER_PASSWORD "password123"
 
-#define DEVICE_ID "jeep1"
+#define DEVICE_ID "jeep0"
 
 // Define Firebase Data object
 FirebaseData fbdo;
@@ -148,7 +148,7 @@ void loop()
 
       dataMillis = millis();
 
-      String collectionPath = "/jeeps/" + String(DEVICE_ID) + "/timeline";
+      String collectionPath = "/jeeps_historical/" + String(DEVICE_ID) + "/timeline";
 
       String documentPath = collectionPath + "/";
 

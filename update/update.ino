@@ -6,6 +6,7 @@
 #endif
 
 #include <Firebase_ESP_Client.h>
+#include <TimeLib.h>  
 #include <addons/TokenHelper.h>
 
 /* 1. Define the WiFi credentials */
@@ -29,6 +30,7 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
+unsigned long timestamp = 1671936000;
 unsigned long dataMillis = 0;
 int count = 0;
 
@@ -65,62 +67,52 @@ float coordinates[][2] = {
   {14.657568, 121.064787}
 };
 
+// The Firestore payload upload callback function
+void fcsUploadCallback(CFS_UploadStatusInfo info)
+{
+    if (info.status == fb_esp_cfs_upload_status_init)
+    {
+        Serial.printf("\nUploading data (%d)...\n", info.size);
+    }
+    else if (info.status == fb_esp_cfs_upload_status_upload)
+    {
+        Serial.printf("Uploaded %d%s\n", (int)info.progress, "%");
+    }
+    else if (info.status == fb_esp_cfs_upload_status_complete)
+    {
+        Serial.println("Upload completed ");
+    }
+    else if (info.status == fb_esp_cfs_upload_status_process_response)
+    {
+        Serial.print("Processing the response... ");
+    }
+    else if (info.status == fb_esp_cfs_upload_status_error)
+    {
+        Serial.printf("Upload failed, %s\n", info.errorMsg.c_str());
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
-
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-    multi.addAP(WIFI_SSID, WIFI_PASSWORD);
-    multi.run();
-#else
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-#endif
-
-    Serial.print("Connecting to Wi-Fi");
-    unsigned long ms = millis();
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.print(".");
-        delay(300);
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-        if (millis() - ms > 10000)
-            break;
-#endif
-    }
-    Serial.println();
-    Serial.print("Connected with IP: ");
-    Serial.println(WiFi.localIP());
-    Serial.println();
+    // 2. Initialize WiFi and Time
+    connectToWiFi();
+    configTimeFromNTP();
 
     Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
 
     /* Assign the api key (required) */
     config.api_key = API_KEY;
 
-    /* Assign the user sign in credentials */
+    // 5. Initialize firebase connection
+    config.api_key = API_KEY;
     auth.user.email = USER_EMAIL;
     auth.user.password = USER_PASSWORD;
-
-    // The WiFi credentials are required for Pico W
-    // due to it does not have reconnect feature.
-#if defined(ARDUINO_RASPBERRY_PI_PICO_W)
-    config.wifi.clearAP();
-    config.wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
-#endif
-
-    /* Assign the callback function for the long running token generation task */
+    // Assign the callback function for the long running token generation task 
     config.token_status_callback = tokenStatusCallback; // see addons/TokenHelper.h
 
-#if defined(ESP8266)
-    // In ESP8266 required for BearSSL rx/tx buffer for large data handle, increase Rx size as needed.
-    fbdo.setBSSLBufferSize(2048 /* Rx buffer size in bytes from 512 - 16384 */, 2048 /* Tx buffer size in bytes from 512 - 16384 */);
-#endif
-
-    // Limit the size of response payload to be collected in FirebaseData
     fbdo.setResponseSize(2048);
-
-    Firebase.begin(&config, &auth);
-
+    Firebase.begin(&config, &auth); // DONT FORGET TO IMPLMENT for case when FAIL
     Firebase.reconnectWiFi(true);
 }
 
@@ -131,38 +123,67 @@ void loop()
 
     if (Firebase.ready() && (millis() - dataMillis > 5000 || dataMillis == 0))
     {
+        updateTimestamp();
+
         if (count > 23){
           count = 0;
         }
 
         dataMillis = millis();
 
-        String documentPath = "jeeps/" + String(DEVICE_ID);
+        String documentPath = "jeeps_realtime/" + String(DEVICE_ID);
         FirebaseJson content;
 
-        // device_id
-        content.set("fields/device_id/stringValue", DEVICE_ID);
-
-        // is_embark
-        content.set("fields/is_embark/booleanValue", true);
-
-        // passenger_count
-        content.set("fields/passenger_count/integerValue", count);
-
-        // route_id
-        content.set("fields/route_id/integerValue", 0);
-
-        // timestamp
-        content.set("fields/timestamp/timestampValue", "2023-5-09T1:28:10Z"); // RFC3339 UTC "Zulu" format
-
         // acceleration
-        content.set("fields/acceleration/arrayValue/values/[0]/doubleValue", String(random(0, 20)));
-        content.set("fields/acceleration/arrayValue/values/[1]/doubleValue",  String(random(0, 20)));
-        content.set("fields/acceleration/arrayValue/values/[2]/doubleValue", String(random(0, 20)));
+      content.set("fields/acceleration/arrayValue/values/[0]/doubleValue", String(random(0, 20)));
+      content.set("fields/acceleration/arrayValue/values/[1]/doubleValue",  String(random(0, 20)));
+      content.set("fields/acceleration/arrayValue/values/[2]/doubleValue", String(random(0, 20)));
 
-        // location
-        content.set("fields/location/geoPointValue/latitude", coordinates[count][0]);
-        content.set("fields/location/geoPointValue/longitude", coordinates[count][1]);
+      // air_qual
+      content.set("fields/air_qual/integerValue", String(random(0, 1200)));
+
+      // speed
+      content.set("fields/speed/doubleValue", String(random(0, 100)));
+
+      // temp
+      content.set("fields/temp/doubleValue", String(random(25, 35)));
+
+      // device_id
+      content.set("fields/device_id/stringValue", DEVICE_ID);
+
+      // disembark
+      content.set("fields/disembark/booleanValue", false);
+
+      // embark
+      content.set("fields/embark/booleanValue", false);
+
+      // gyroscope
+      content.set("fields/gyroscope/arrayValue/values/[0]/doubleValue", String(random(0, 20)));
+      content.set("fields/gyroscope/arrayValue/values/[1]/doubleValue",  String(random(0, 20)));
+      content.set("fields/gyroscope/arrayValue/values/[2]/doubleValue", String(random(0, 20)));
+
+      // is_active
+      content.set("fields/is_active/booleanValue", true);
+
+      // location
+      content.set("fields/location/geoPointValue/latitude", coordinates[count][0]);
+      content.set("fields/location/geoPointValue/longitude", coordinates[count][1]);
+
+      // passenger_count
+      content.set("fields/passenger_count/integerValue", count);
+
+      // route_id
+      content.set("fields/route_id/integerValue", 0);
+
+      // Get the current timestamp
+      //unsigned long timestamp = now();  // Get the current time
+      // Convert timestamp to a string
+      String timestampStr = convertToFirebaseTimestamp(timestamp);
+
+      // timestamp
+      content.set("fields/timestamp/timestampValue", timestampStr);
+
+      Serial.print("Updating a document... ");
 
         if (Firebase.Firestore.patchDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath.c_str(), content.raw(), "device_id,is_embark,passenger_count,route_id,timestamp,acceleration,location")){
           Serial.printf("Updated Document... count: %d\n%s\n\n", count, fbdo.payload().c_str());
@@ -171,4 +192,67 @@ void loop()
         }
         count++;
     }
+}
+
+// ----------------------- HELPER FXNS for WiFi -----------------------
+void connectToWiFi() {
+  Serial.println("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Waiting for connection...");
+  }
+
+  Serial.println("Connected to WiFi!");
+}
+
+// ----------------------- HELPER FXNS for Timestamp -----------------------
+void configTimeFromNTP() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Waiting for NTP time sync...");
+
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S"); // Show the current time
+}
+
+void updateTimestamp() {
+  if(WiFi.status() == WL_CONNECTED) {
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    // Use the seconds since the Unix epoch as your timestamp
+    timestamp = now;
+  } else {
+    // If not connected to WiFi, use the ESP32's internal millis() function
+    // This won't be accurate over long periods, but will be reasonably accurate in short term
+    timestamp += millis() / 1000;
+  }
+}
+
+String convertToFirebaseTimestamp(unsigned long int unixTime) {
+  // Convert UNIX timestamp to ISO 8601 format
+  time_t t = unixTime;
+  struct tm timeinfo;
+  gmtime_r(&t, &timeinfo);
+  char timestampStr[22];  // Increased the size to accommodate the 'Z' character
+  snprintf(timestampStr, sizeof(timestampStr), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+           timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  return String(timestampStr);
 }
