@@ -10,7 +10,7 @@
 
 /* 1. Define the WiFi credentials */
 #define WIFI_SSID "Wil"
-#define WIFI_PASSWORD "122333444"
+#define WIFI_PASSWORD "1223334444"
 
 /* 2. Define the API Key */
 #define API_KEY "AIzaSyDVi1awMUCpMK6P-AejbbG0Ga2jBtD13Vo"
@@ -32,7 +32,6 @@ FirebaseConfig config;
 unsigned long dataMillis = 0;
 int count = 0;
 
-bool taskcomplete = false;
 
 
 #if defined(ARDUINO_RASPBERRY_PI_PICO_W)
