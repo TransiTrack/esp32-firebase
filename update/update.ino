@@ -131,7 +131,11 @@ void loop()
 
         dataMillis = millis();
 
-        String documentPath = "jeeps_realtime/" + String(DEVICE_ID);
+        String documentPath_realtime = "jeeps_realtime/" + String(DEVICE_ID);
+
+        String collectionPath = "/jeeps_historical/" + String(DEVICE_ID) + "/timeline";
+        String documentPath_historical = collectionPath + "/";
+
         FirebaseJson content;
 
         // acceleration
@@ -185,11 +189,18 @@ void loop()
 
       Serial.print("Updating a document... ");
 
-        if (Firebase.Firestore.patchDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath.c_str(), content.raw(), "device_id,is_embark,passenger_count,route_id,timestamp,acceleration,location")){
+        if (Firebase.Firestore.patchDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath_realtime.c_str(), content.raw(), "acceleration, air_qual, device_id, disembark, embark, gyroscope, is_active, location, passenger_count, route_id, speed, temp, timestamp")){
           Serial.printf("Updated Document... count: %d\n%s\n\n", count, fbdo.payload().c_str());
         } else {
           Serial.println(fbdo.errorReason());
         }
+
+        if (Firebase.Firestore.createDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath_historical.c_str(), content.raw())){
+          Serial.printf("ok\n%s\n\n", fbdo.payload().c_str());
+        } else {
+          Serial.println(fbdo.errorReason());
+        }
+          
         count++;
     }
 }
